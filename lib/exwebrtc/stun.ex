@@ -2,6 +2,8 @@ defmodule Exwebrtc.STUN do
   use Bitwise
 
   @magic_cookie << 33, 18, 164, 66 >>
+  @fingerprint_mask 0x5354554e
+
   @attributes_id_to_name %{
     0x0001 => :mapped_address,
     0x0002 => :response_address,
@@ -53,16 +55,48 @@ defmodule Exwebrtc.STUN do
     port = <<port :: size(16) >> |> string_xor(@magic_cookie)
     encode_attribute(:xor_mapped_address, [family, port, ip_addr])
   end
+  def validate(packet, %{fingerprint: fingerprint} = results, creds) do
+    packet_crc32 = :erlang.crc32(binary_part(packet, 0, iolist_size(packet) - 8)) ^^^ @fingerprint_mask
+    << fingerprint_int :: size(32) >> = fingerprint
+    if packet_crc32 != fingerprint_int do
+      raise "bad fingerprint"
+    else
+      validate(packet, Dict.delete(results, :fingerprint), creds)
+    end
+  end
+  def validate(packet, %{message_integrity: message_integrity} = results, creds) do
+    :crypto.start()
+    if !Dict.has_key?(creds, results[:username]) do
+      raise "missing key for #{results[:username]} to verify packet"
+    end
+    # change the length in header
+    adjusted_attribs_size = results[:attributes_size] - 8
+    packet_for_hmac_check = binary_part(packet, 0, 2) <> << adjusted_attribs_size :: size(16) >> <> binary_part(packet, 4, (adjusted_attribs_size - 8))
 
-  defp parse_request_type(<< 0x0001 :: size(16) >>), do: :binding_request
-
-  def parse(packet, _creds) do
+    # compute mac
+    packet_mac = :crypto.hmac(:sha, creds[results[:username]], packet_for_hmac_check)
+    if packet_mac != message_integrity do
+      raise "invalid message integrity"
+    end
+    validate(packet, Dict.delete(results, :message_integrity), creds)
+  end
+  def validate(_packet, results, _creds) do
+    {:ok, results}
+  end
+  
+  def parse(packet, creds) do
     results = %{}
     << request_type_id :: size(16), attributes_size :: size(16), transaction_id :: [binary, size(16)], attributes :: binary >> = packet
+    results = Dict.put(results, :attributes_size, attributes_size)
     results = Dict.put(results, :request_type, @request_type_id_to_name[request_type_id])
     results = Dict.put(results, :transaction_id, transaction_id)
     results = parse_attributes(results, binary_part(attributes, 0, attributes_size))
-    {:ok, results}
+    try do
+      validate(packet, results, creds)
+      {:ok, results}
+    rescue
+      e in RuntimeError -> {:error, e.message}
+    end
   end
 
   def parse_attributes(results, << attribute_id :: size(16), attribute_size :: size(16), rest :: binary >>) do
@@ -86,10 +120,5 @@ defmodule Exwebrtc.STUN do
     << parsed_value :: size(64) >> = value
     parsed_value
   end
-  def parse_attribute_value(:message_integrity, _value) do
-    nil
-  end
-  def parse_attribute_value(:fingerprint, _value) do
-    nil
-  end
+  def parse_attribute_value(_name, value), do: value
 end

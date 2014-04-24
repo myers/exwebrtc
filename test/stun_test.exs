@@ -30,6 +30,10 @@ defmodule STUNTest do
     {:error, "bad fingerprint"} = Exwebrtc.STUN.parse(stun_request_with_bad_fingerprint, %{"d7de9017:b52d0601" => "755f33f22509329a49ab3d6420e947e9"})
   end
 
+  test "parse captured request with wrong password for message integrity" do
+    {:error, "invalid message integrity"} = Exwebrtc.STUN.parse(stun_request_1, %{"d7de9017:b52d0601" => "foo"})
+  end
+
 #     def testBuildRequest(self):
 #         stun_request_1 = ''.join([chr(x) for x in STUN_REQUEST_1])
 #         protocol = stun.STUN()
