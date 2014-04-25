@@ -17,7 +17,7 @@ defmodule STUNTest do
   end
 
   test "parse captured request" do
-    {:ok, ret} = Exwebrtc.STUN.parse(stun_request_1, %{"d7de9017:b52d0601" => "755f33f22509329a49ab3d6420e947e9"})
+    {:ok, ret} = Exwebrtc.STUN.parse(stun_request_1, fn(_r) -> "755f33f22509329a49ab3d6420e947e9" end)
     assert :request == ret[:request_type]
     assert <<33, 18, 164, 66, 124, 83, 243, 18, 121, 83, 109, 153, 192, 13, 20, 77>> == ret[:transaction_id]
     assert "d7de9017:b52d0601" == ret[:username]
@@ -27,12 +27,17 @@ defmodule STUNTest do
 
   test "parse captured request with bad fingerprint" do
     stun_request_with_bad_fingerprint = binary_part(stun_request_1, 0, iolist_size(stun_request_1) - 4) <> <<0, 0, 0, 0>>
-    {:error, "bad fingerprint"} = Exwebrtc.STUN.parse(stun_request_with_bad_fingerprint, %{"d7de9017:b52d0601" => "755f33f22509329a49ab3d6420e947e9"})
+    {:error, "bad fingerprint"} = Exwebrtc.STUN.parse(stun_request_with_bad_fingerprint, fn(_r) -> "755f33f22509329a49ab3d6420e947e9" end)
   end
 
   test "parse captured request with wrong password for message integrity" do
-    {:error, "invalid message integrity"} = Exwebrtc.STUN.parse(stun_request_1, %{"d7de9017:b52d0601" => "foo"})
+    {:error, "invalid message integrity"} = Exwebrtc.STUN.parse(stun_request_1, fn(_r) -> "foo" end)
   end
+
+  test "parse captured response" do
+    {:ok, response} = Exwebrtc.STUN.parse(stun_response_1, fn(_r) -> "755f33f22509329a49ab3d6420e947e9" end)
+    assert {"192.168.42.8", 51944} = response[:mapped_address]
+  end 
 
 #     def testBuildRequest(self):
 #         stun_request_1 = ''.join([chr(x) for x in STUN_REQUEST_1])
@@ -61,14 +66,6 @@ defmodule STUNTest do
 #         protocol.datagramReceived(testPacket, ('127.0.0.1', 4242,))
 
 #     def testParseCapturedResponse(self):
-#         stun_response_1 = ''.join([chr(x) for x in STUN_RESPONSE_1])
-#         class STUNNode(stun.STUN):
-#             def responseRecieved(stunNode, request, source):
-#                 self.assertEqual(('192.168.42.8', 51944,), request['mapped_address'])
-#         protocol = STUNNode()
-#         protocol.addCred('d7de9017:b52d0601', '755f33f22509329a49ab3d6420e947e9')
-#         protocol.username = 'd7de9017:b52d0601'
-#         protocol.datagramReceived(stun_response_1, ('127.0.0.1', 4242,))
     
 #     def testBuildBindSuccessReply(self):
 #         #stun_request_1 = ''.join([chr(x) for x in STUN_REQUEST_1])
