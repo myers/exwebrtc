@@ -71,15 +71,39 @@ defmodule Exwebrtc.STUN do
       end
     end) |> Enum.reject(&is_atom/1)
 
-    # add message_integrity
     if Dict.has_key?(attribs, :message_integrity_key) do
-      header = List.replace_at(header, 1, << iodata_size(attributes) + 24 :: size(16) >>)
-      packet_mac = :crypto.hmac(:sha, attribs[:message_integrity_key], iodata_to_binary([header, attributes]))
-      attributes = attributes ++ [encode_attribute(:message_integrity, packet_mac)]
+      [header, attributes] = add_message_integrity(attribs[:message_integrity_key], header, attributes)
     end
+    packet = add_fingerprint(header, attributes)
+    {:ok, packet}
+  end
+
+  def add_fingerprint(header, attributes) do
     header = List.replace_at(header, 1, << iodata_size(attributes) + 8 :: size(16) >>)
     attributes = attributes ++ [encode_attribute(:fingerprint, [header, attributes])]
-    {:ok, [header,attributes]}
+    [header, attributes]
+  end
+
+  def add_message_integrity(key, header, attributes) do
+    header = List.replace_at(header, 1, << iodata_size(attributes) + 24 :: size(16) >>)
+    packet_mac = :crypto.hmac(:sha, key, iodata_to_binary([header, attributes]))
+    attributes = attributes ++ [encode_attribute(:message_integrity, packet_mac)]
+    [header, attributes]
+  end
+
+  def build_reply(attribs) do
+    if !Dict.has_key?(attribs, :transaction_id) do
+      raise "must supply transaction_id"
+    end
+
+    header = [<< @request_type_name_to_id[:response] :: size(16)>>, << 0 :: size(16) >>, attribs[:transaction_id]]
+
+    attributes = [encode_attribute(:xor_mapped_address, attribs[:mapped_address])]
+    if Dict.has_key?(attribs, :message_integrity_key) do
+      [header, attributes] = add_message_integrity(attribs[:message_integrity_key], header, attributes)
+    end
+    packet = add_fingerprint(header, attributes)
+    {:ok, packet}
   end
 
   def string_xor(s1, s2) do
@@ -154,6 +178,9 @@ defmodule Exwebrtc.STUN do
   end
   def parse_attribute_value(:xor_mapped_address, value) do
     <<family :: size(16), port :: [binary, size(2)], ip_addr :: [binary, size(4)] >> = value
+    if family != 1 do
+      raise "IPv6 not supported"
+    end
     ip_addr = ip_addr |> string_xor(@magic_cookie)
     << a :: size(8), b :: size(8), c :: size(8), d :: size(8) >> = ip_addr
     port = port |> string_xor(@magic_cookie)

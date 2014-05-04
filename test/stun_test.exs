@@ -38,7 +38,7 @@ defmodule STUNTest do
   test "parse captured response" do
     {:ok, response} = STUN.parse(stun_response_1, fn(_r) -> "755f33f22509329a49ab3d6420e947e9" end)
     assert {"192.168.42.8", 51944} = response[:mapped_address]
-  end 
+  end
 
   test "build request" do
     {:ok, packet} = STUN.build_request(
@@ -51,32 +51,14 @@ defmodule STUNTest do
     assert stun_request_1 == iodata_to_binary(packet)
   end
 
-#     def testBuildAnotherRequest(self):
-#         stun_request_1 = ''.join([chr(x) for x in STUN_REQUEST_1])
-#         protocol = stun.STUN()
-#         protocol.addCred('d7de9017:b52d0601', '755f33f22509329a49ab3d6420e947e9')
-#         testPacket = protocol.buildBindingRequest({
-#             'username': 'd7de9017:b52d0601',
-#             'priority': 1853817087,
-#             'ice_controlled': 1139902001367096328,
-#             'use_candidate': None,
-#         })
-#         # test by trying to parse this
-#         protocol.datagramReceived(testPacket, ('127.0.0.1', 4242,))
-
-#     def testParseCapturedResponse(self):
-    
-#     def testBuildBindSuccessReply(self):
-#         #stun_request_1 = ''.join([chr(x) for x in STUN_REQUEST_1])
-#         stun_response_1 = ''.join([chr(x) for x in STUN_RESPONSE_1])
-#         protocol = stun.STUN()
-#         protocol.addCred('d7de9017:b52d0601', '755f33f22509329a49ab3d6420e947e9')
-#         self.assertEqual( stun_response_1, protocol.buildBindSuccessReply( '!\x12\xa4B|S\xf3\x12ySm\x99\xc0\r\x14M', 'd7de9017:b52d0601', ('192.168.42.8', 51944,) ) )
-
-
-
-
-
+  test "build build bind success reply" do
+    {:ok, packet} = STUN.build_reply(
+      transaction_id: << 33, 18, 164, 66, 124, 83, 243, 18, 121, 83, 109, 153, 192, 13, 20, 77 >>,
+      message_integrity_key: "755f33f22509329a49ab3d6420e947e9",
+      mapped_address: {"192.168.42.8", 51944}
+    )
+    assert stun_response_1 == iodata_to_binary(packet)
+  end
 
   def stun_request_1 do
     # Captured from Wireshark with two Firefox 28 browser talking to each other
