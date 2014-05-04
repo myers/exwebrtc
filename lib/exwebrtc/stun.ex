@@ -55,31 +55,80 @@ defmodule Exwebrtc.STUN do
     end
   end
 
+  def build_request(attribs) do
+    transaction_id = if Dict.has_key?(attribs, :transaction_id) do
+      attribs[:transaction_id]
+    else
+      raise "don't know how to make transaction ids yet"
+    end
+
+    header = [<< @request_type_name_to_id[:request] :: size(16)>>, << 0 :: size(16) >>, transaction_id]
+
+    attribute_order = [:username, :use_candidate, :priority, :ice_controlling, :ice_controlled]
+    attributes = Enum.map(attribute_order, fn(attrib_name) -> 
+      if Dict.has_key?(attribs, attrib_name) do
+        encode_attribute(attrib_name, Dict.get(attribs, attrib_name))
+      end
+    end) |> Enum.reject(&is_atom/1)
+
+    # add message_integrity
+    if Dict.has_key?(attribs, :message_integrity_key) do
+      header = List.replace_at(header, 1, << iodata_size(attributes) + 24 :: size(16) >>)
+      packet_mac = :crypto.hmac(:sha, attribs[:message_integrity_key], iodata_to_binary([header, attributes]))
+      attributes = attributes ++ [encode_attribute(:message_integrity, packet_mac)]
+    end
+    header = List.replace_at(header, 1, << iodata_size(attributes) + 8 :: size(16) >>)
+    attributes = attributes ++ [encode_attribute(:fingerprint, [header, attributes])]
+    {:ok, [header,attributes]}
+  end
+
   def string_xor(s1, s2) do
     s1 = bitstring_to_list(s1)
     s2 = bitstring_to_list(s2)
-    Enum.zip(s1, s2) |> Enum.map(fn {a, b} -> a^^^b end) |> iolist_to_binary
+    Enum.zip(s1, s2) |> Enum.map(fn {a, b} -> a^^^b end) |> iodata_to_binary
   end
 
   def ip_address_to_binary(ip_addr) do
     {:ok, {a, b, c, d}} = ip_addr |> to_char_list |> :inet.parse_address
-    iolist_to_binary([a, b, c, d])
+    iodata_to_binary([a, b, c, d])
   end
 
-  def encode_attribute(attr_type, value) do
-    [<< @attributes_name_to_id[attr_type] :: size(16)>>, <<iolist_size(value) :: size(16)>>, value]
+  def encode_attribute(:priority, value) do
+    encode_attribute_header(:priority, << value :: size(32) >>)
   end
-  
-  def encode_xor_mapped_address(ip_addr, port) do
+  def encode_attribute(:fingerprint, value) do
+    value = :erlang.crc32(value) ^^^ @fingerprint_mask
+    encode_attribute_header(:fingerprint, << value :: size(32) >>)
+  end
+  def encode_attribute(:ice_controlled, value) do
+    encode_attribute_header(:ice_controlled, << value :: size(64) >>)
+  end
+  def encode_attribute(:xor_mapped_address, {ip_addr, port}) do
     ip_addr = ip_addr |> ip_address_to_binary |> string_xor(@magic_cookie)
     family = <<1 :: size(16)>>
     port = <<port :: size(16) >> |> string_xor(@magic_cookie)
-    encode_attribute(:xor_mapped_address, [family, port, ip_addr])
+    encode_attribute_header(:xor_mapped_address, [family, port, ip_addr])
+  end
+  def encode_attribute(attr_type, value) do
+    encode_attribute_header(attr_type, value)
   end
 
+  def padding_size(attribute_size) do
+    (4 * Float.ceil(attribute_size / 4)) - attribute_size
+  end
+
+  def padding(attribute_size) do
+    List.duplicate(0, padding_size(attribute_size))
+  end
+
+  def encode_attribute_header(attr_type, value) do
+    attribute_size = iodata_size(value)
+    [<< @attributes_name_to_id[attr_type] :: size(16) >>, << attribute_size :: size(16) >>, value, padding(attribute_size)]
+  end
+  
   def parse_attributes(results, << attribute_id :: size(16), attribute_size :: size(16), rest :: binary >>) do
-    padding_size = 4 * Float.ceil(attribute_size / 4) - attribute_size
-    << value :: [binary, size(attribute_size)], _padding :: [binary, size(padding_size)], next_attribute :: binary >> = rest
+    ps = padding_size(attribute_size)
+    << value :: [binary, size(attribute_size)], _padding :: [binary, size(ps)], next_attribute :: binary >> = rest
     #IO.puts "attr type #{inspect(@attributes_id_to_name[attribute_id])}, value #{inspect(value)}"
     value = parse_attribute_value(@attributes_id_to_name[attribute_id], value)
     if value do
@@ -114,7 +163,7 @@ defmodule Exwebrtc.STUN do
   def parse_attribute_value(_name, value), do: value
 
   def verify_fingerprint(packet, << fingerprint :: size(32) >>) do
-    packet_crc32 = :erlang.crc32(binary_part(packet, 0, iolist_size(packet) - 8)) ^^^ @fingerprint_mask
+    packet_crc32 = :erlang.crc32(binary_part(packet, 0, iodata_size(packet) - 8)) ^^^ @fingerprint_mask
     if packet_crc32 != fingerprint do
       raise "bad fingerprint"
     end
@@ -124,7 +173,7 @@ defmodule Exwebrtc.STUN do
     :crypto.start()
     # change the length in header
     adjusted_attribs_size = results[:attributes_size] - 8
-    packet_for_hmac_check = binary_part(packet, 0, 2) <> << adjusted_attribs_size :: size(16) >> <> binary_part(packet, 4, iolist_size(packet) - 4 - 8 - 24)
+    packet_for_hmac_check = binary_part(packet, 0, 2) <> << adjusted_attribs_size :: size(16) >> <> binary_part(packet, 4, iodata_size(packet) - 4 - 8 - 24)
 
     # compute mac
     hmac_key = hmac_key_callback.(results)

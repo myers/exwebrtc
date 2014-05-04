@@ -1,23 +1,24 @@
 defmodule STUNTest do
   use ExUnit.Case
+  alias Exwebrtc.STUN, as: STUN
 
   test "string_xor" do
-    assert <<235, 250>> == Exwebrtc.STUN.string_xor(<<51944 :: size(16)>>, <<33, 18, 164, 66>>)
+    assert <<235, 250>> == STUN.string_xor(<<51944 :: size(16)>>, <<33, 18, 164, 66>>)
   end
 
   test "ip_address_to_binary" do
-    assert <<192, 168, 42, 8>> == Exwebrtc.STUN.ip_address_to_binary("192.168.42.8")
+    assert <<192, 168, 42, 8>> == STUN.ip_address_to_binary("192.168.42.8")
   end
 
   test "encode_xor_mapped_address" do
     # from the captured request
     target = <<0x00, 0x20, 0x00, 0x08, 0x00, 0x01, 0xeb, 0xfa, 0xe1, 0xba, 0x8e, 0x4a>>
-    results = Exwebrtc.STUN.encode_xor_mapped_address("192.168.42.8", 51944)
-    assert target == iolist_to_binary(results)
+    results = STUN.encode_attribute(:xor_mapped_address, {"192.168.42.8", 51944})
+    assert target == iodata_to_binary(results)
   end
 
   test "parse captured request" do
-    {:ok, ret} = Exwebrtc.STUN.parse(stun_request_1, fn(_r) -> "755f33f22509329a49ab3d6420e947e9" end)
+    {:ok, ret} = STUN.parse(stun_request_1, fn(_r) -> "755f33f22509329a49ab3d6420e947e9" end)
     assert :request == ret[:request_type]
     assert <<33, 18, 164, 66, 124, 83, 243, 18, 121, 83, 109, 153, 192, 13, 20, 77>> == ret[:transaction_id]
     assert "d7de9017:b52d0601" == ret[:username]
@@ -26,31 +27,29 @@ defmodule STUNTest do
   end
 
   test "parse captured request with bad fingerprint" do
-    stun_request_with_bad_fingerprint = binary_part(stun_request_1, 0, iolist_size(stun_request_1) - 4) <> <<0, 0, 0, 0>>
-    {:error, "bad fingerprint"} = Exwebrtc.STUN.parse(stun_request_with_bad_fingerprint, fn(_r) -> "755f33f22509329a49ab3d6420e947e9" end)
+    stun_request_with_bad_fingerprint = binary_part(stun_request_1, 0, iodata_size(stun_request_1) - 4) <> <<0, 0, 0, 0>>
+    {:error, "bad fingerprint"} = STUN.parse(stun_request_with_bad_fingerprint, fn(_r) -> "755f33f22509329a49ab3d6420e947e9" end)
   end
 
   test "parse captured request with wrong password for message integrity" do
-    {:error, "invalid message integrity"} = Exwebrtc.STUN.parse(stun_request_1, fn(_r) -> "foo" end)
+    {:error, "invalid message integrity"} = STUN.parse(stun_request_1, fn(_r) -> "foo" end)
   end
 
   test "parse captured response" do
-    {:ok, response} = Exwebrtc.STUN.parse(stun_response_1, fn(_r) -> "755f33f22509329a49ab3d6420e947e9" end)
+    {:ok, response} = STUN.parse(stun_response_1, fn(_r) -> "755f33f22509329a49ab3d6420e947e9" end)
     assert {"192.168.42.8", 51944} = response[:mapped_address]
   end 
 
-#     def testBuildRequest(self):
-#         stun_request_1 = ''.join([chr(x) for x in STUN_REQUEST_1])
-#         protocol = stun.STUN()
-#         protocol.addCred('d7de9017:b52d0601', '755f33f22509329a49ab3d6420e947e9')
-#         testPacket = protocol.buildBindingRequest({
-#             'transaction_id': '!\x12\xa4B|S\xf3\x12ySm\x99\xc0\r\x14M', # normally you wouldn't pass this in
-#             'username': 'd7de9017:b52d0601',
-#             'priority': 1853817087,
-#             'ice_controlled': 1139902001367096328
-#         })
-#         self.assertEqual(stun_request_1, testPacket)
-
+  test "build request" do
+    {:ok, packet} = STUN.build_request(
+      transaction_id: << 33, 18, 164, 66, 124, 83, 243, 18, 121, 83, 109, 153, 192, 13, 20, 77 >>,
+      username: "d7de9017:b52d0601",
+      priority: 1853817087,
+      ice_controlled: 1139902001367096328,
+      message_integrity_key: "755f33f22509329a49ab3d6420e947e9"
+    )
+    assert stun_request_1 == iodata_to_binary(packet)
+  end
 
 #     def testBuildAnotherRequest(self):
 #         stun_request_1 = ''.join([chr(x) for x in STUN_REQUEST_1])
