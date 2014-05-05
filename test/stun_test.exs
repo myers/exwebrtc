@@ -17,6 +17,18 @@ defmodule STUNTest do
     assert target == iodata_to_binary(results)
   end
 
+  test "encode use_candidate" do
+    target = <<0, 37, 0, 0>>
+    results = STUN.encode_attribute(:use_candidate, nil)
+    assert target == iodata_to_binary(results)
+  end
+
+  test "encode ice_controlling" do
+    target = <<128, 42, 0, 8, 0, 0, 0, 0, 0, 0, 4, 87>>
+    results = STUN.encode_attribute(:ice_controlling, 1111)
+    assert target == iodata_to_binary(results)
+  end
+
   test "parse captured request" do
     {:ok, ret} = STUN.parse(stun_request_1, fn(_r) -> "755f33f22509329a49ab3d6420e947e9" end)
     assert :request == ret[:request_type]
@@ -51,13 +63,41 @@ defmodule STUNTest do
     assert stun_request_1 == iodata_to_binary(packet)
   end
 
-  test "build build bind success reply" do
+  test "build bind success reply" do
     {:ok, packet} = STUN.build_reply(
       transaction_id: << 33, 18, 164, 66, 124, 83, 243, 18, 121, 83, 109, 153, 192, 13, 20, 77 >>,
       message_integrity_key: "755f33f22509329a49ab3d6420e947e9",
       mapped_address: {"192.168.42.8", 51944}
     )
     assert stun_response_1 == iodata_to_binary(packet)
+  end
+
+  test "build request with generated transaction id" do
+    {:ok, packet} = STUN.build_request(
+      ice_controlling: 6263569403430582672,
+      priority: 1861943551,
+      use_candidate: nil,
+      username: "a00970de:3081b21e",
+      message_integrity_key: "cfe7c4bd1e6dcae0b325c8e5ef21e30f",
+    )
+    assert {:ok, _attribs} = STUN.parse(iodata_to_binary(packet), fn(_r) -> "cfe7c4bd1e6dcae0b325c8e5ef21e30f" end)
+  end
+
+  test "build request 2" do
+    {:ok, packet} = STUN.build_request(
+      transaction_id: << 33, 18, 164, 66, 81, 233, 59, 241, 122, 85, 197, 62, 127, 136, 64, 65 >>,
+      ice_controlling: 6263569403430582672,
+      priority: 1861943551,
+      use_candidate: nil,
+      username: "a00970de:3081b21e",
+      message_integrity_key: "cfe7c4bd1e6dcae0b325c8e5ef21e30f",
+    )
+    assert stun_request_2 == iodata_to_binary(packet)
+    assert {:ok, _attribs} = STUN.parse(iodata_to_binary(packet), fn(_r) -> "cfe7c4bd1e6dcae0b325c8e5ef21e30f" end)
+  end
+
+  def stun_request_2 do
+    << 0, 1, 0, 80, 33, 18, 164, 66, 81, 233, 59, 241, 122, 85, 197, 62, 127, 136, 64, 65, 0, 6, 0, 17, 97, 48, 48, 57, 55, 48, 100, 101, 58, 51, 48, 56, 49, 98, 50, 49, 101, 0, 0, 0, 0, 37, 0, 0, 0, 36, 0, 4, 110, 251, 0, 255, 128, 42, 0, 8, 86, 236, 171, 47, 197, 124, 57, 144, 0, 8, 0, 20, 150, 46, 42, 92, 119, 22, 198, 184, 84, 30, 79, 234, 21, 179, 39, 27, 107, 211, 227, 21, 128, 40, 0, 4, 109, 148, 93, 51 >>
   end
 
   def stun_request_1 do

@@ -4,7 +4,7 @@ defmodule Exwebrtc.Mixfile do
   def project do
     [app: :exwebrtc,
      version: "0.0.1",
-     elixir: "~> 0.13.0",
+     elixir: "~> 0.13.1",
      deps: deps]
   end
 
@@ -12,15 +12,20 @@ defmodule Exwebrtc.Mixfile do
   #
   # Type `mix help compile.app` for more information
   def application do
-    [ applications: [] ]
+    [ 
+      applications: [
+        :cowboy,
+        :crypto,
+      ],
+      mod: { Exwebrtc, [] }
+    ]
   end
 
-  # List all dependencies in the format:
-  #
-  # { :foobar, git: "https://github.com/elixir-lang/foobar.git", tag: "0.1" }
-  #
-  # Type `mix help deps` for more examples and options
   defp deps do
-    []
+    [
+      { :cowboy, github: "extend/cowboy" },
+      { :exactor, "~> 0.3.2" },
+      { :hound, github: "HashNuke/hound" }
+    ]
   end
 end

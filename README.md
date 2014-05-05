@@ -11,7 +11,7 @@ The downside of WebRTC is it's a amalgamation of protocols that aren't yet well 
 
 # Current status
 
-Building the STUN client/server.
+The demo can use STUN to negotiate what ports to use.  With Firefox (and some tweaking of the SDP to put in the right IP addresses) I can get the browser to start the DTLS handshake.  Now working on reading those DTLS packets.
 
 # Future plans
 

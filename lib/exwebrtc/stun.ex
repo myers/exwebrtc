@@ -35,14 +35,17 @@ defmodule Exwebrtc.STUN do
   @request_type_name_to_id Enum.reduce(@request_type_id_to_name, %{}, fn({k, v}, acc) -> Dict.put(acc, v, k) end)
 
   def parse(packet, hmac_key_callback) do
-    results = %{}
-    << request_type_id :: size(16), attributes_size :: size(16), transaction_id :: [binary, size(16)], attributes :: binary >> = packet
-    results = Dict.put(results, :attributes_size, attributes_size)
-    results = Dict.put(results, :request_type, @request_type_id_to_name[request_type_id])
-    results = Dict.put(results, :transaction_id, transaction_id)
-    results = parse_attributes(results, binary_part(attributes, 0, attributes_size))
-
     try do
+      results = %{}
+      << request_type_id :: size(16), attributes_size :: size(16), transaction_id :: [binary, size(16)], attributes :: binary >> = packet
+      results = Dict.put(results, :attributes_size, attributes_size)
+      results = Dict.put(results, :request_type, @request_type_id_to_name[request_type_id])
+      results = Dict.put(results, :transaction_id, transaction_id)
+      if attributes_size != iodata_size(attributes) do
+        raise "attributes size is incorrect, garbled packet?"
+      end
+      results = parse_attributes(results, binary_part(attributes, 0, attributes_size))
+
       if Dict.has_key?(results, :fingerprint) do
         verify_fingerprint(packet, results[:fingerprint])
       end
@@ -59,13 +62,12 @@ defmodule Exwebrtc.STUN do
     transaction_id = if Dict.has_key?(attribs, :transaction_id) do
       attribs[:transaction_id]
     else
-      raise "don't know how to make transaction ids yet"
+      [@magic_cookie, :crypto.rand_bytes(12)]
     end
-
     header = [<< @request_type_name_to_id[:request] :: size(16)>>, << 0 :: size(16) >>, transaction_id]
 
     attribute_order = [:username, :use_candidate, :priority, :ice_controlling, :ice_controlled]
-    attributes = Enum.map(attribute_order, fn(attrib_name) -> 
+    attributes = Enum.map(attribute_order, fn(attrib_name) ->
       if Dict.has_key?(attribs, attrib_name) do
         encode_attribute(attrib_name, Dict.get(attribs, attrib_name))
       end
@@ -127,6 +129,9 @@ defmodule Exwebrtc.STUN do
   def encode_attribute(:ice_controlled, value) do
     encode_attribute_header(:ice_controlled, << value :: size(64) >>)
   end
+  def encode_attribute(:ice_controlling, value) do
+    encode_attribute_header(:ice_controlling, << value :: size(64) >>)
+  end
   def encode_attribute(:xor_mapped_address, {ip_addr, port}) do
     ip_addr = ip_addr |> ip_address_to_binary |> string_xor(@magic_cookie)
     family = <<1 :: size(16)>>
@@ -145,6 +150,9 @@ defmodule Exwebrtc.STUN do
     List.duplicate(0, padding_size(attribute_size))
   end
 
+  def encode_attribute_header(attr_type, nil) do
+    [<< @attributes_name_to_id[attr_type] :: size(16) >>, << 0 :: size(16) >>]
+  end
   def encode_attribute_header(attr_type, value) do
     attribute_size = iodata_size(value)
     [<< @attributes_name_to_id[attr_type] :: size(16) >>, << attribute_size :: size(16) >>, value, padding(attribute_size)]
@@ -153,7 +161,6 @@ defmodule Exwebrtc.STUN do
   def parse_attributes(results, << attribute_id :: size(16), attribute_size :: size(16), rest :: binary >>) do
     ps = padding_size(attribute_size)
     << value :: [binary, size(attribute_size)], _padding :: [binary, size(ps)], next_attribute :: binary >> = rest
-    #IO.puts "attr type #{inspect(@attributes_id_to_name[attribute_id])}, value #{inspect(value)}"
     value = parse_attribute_value(@attributes_id_to_name[attribute_id], value)
     if value do
       key = if @attributes_id_to_name[attribute_id] == :xor_mapped_address do
@@ -168,14 +175,10 @@ defmodule Exwebrtc.STUN do
   def parse_attributes(results, ""), do: results
 
   def parse_attribute_value(:username, value), do: value
-  def parse_attribute_value(:priority, value) do 
-    << parsed_value :: size(32) >> = value
-    parsed_value
-  end
-  def parse_attribute_value(:ice_controlled, value) do 
-    << parsed_value :: size(64) >> = value
-    parsed_value
-  end
+  def parse_attribute_value(:priority, << value :: size(32) >> ), do: value
+  def parse_attribute_value(:ice_controlled, << value :: size(64) >>), do: value
+  def parse_attribute_value(:ice_controlling, << value :: size(64) >>), do: value
+
   def parse_attribute_value(:xor_mapped_address, value) do
     <<family :: size(16), port :: [binary, size(2)], ip_addr :: [binary, size(4)] >> = value
     if family != 1 do
@@ -197,7 +200,6 @@ defmodule Exwebrtc.STUN do
   end
 
   def verify_message_integrity(packet, results, hmac_key_callback) do
-    :crypto.start()
     # change the length in header
     adjusted_attribs_size = results[:attributes_size] - 8
     packet_for_hmac_check = binary_part(packet, 0, 2) <> << adjusted_attribs_size :: size(16) >> <> binary_part(packet, 4, iodata_size(packet) - 4 - 8 - 24)

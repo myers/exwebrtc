@@ -1,0 +1,9 @@
+%{"cowboy": {:git, "git://github.com/extend/cowboy.git", "1ad3aae4d5459ee991805d16a3837e1da2ba96ff", []},
+  "cowlib": {:git, "git://github.com/extend/cowlib.git", "f58340a0044856bb508df03cfe94cf79308380a2", [ref: "0.6.1"]},
+  "ex_doc": {:git, "git://github.com/elixir-lang/ex_doc.git", "fc0f00d2ff3c5e20eaee519b937f6feb998aa0d0", []},
+  "exactor": {:package, "0.3.2"},
+  "hound": {:git, "git://github.com/HashNuke/hound.git", "52261f96013128b314cc5f6c99ddd2031602595e", []},
+  "ibrowse": {:git, "git://github.com/cmullaparthi/ibrowse.git", "e8ae353c16d4f0897abb9f80025b52925b974dd1", [tag: "v4.0.2"]},
+  "jsex": {:git, "git://github.com/talentdeficit/jsex.git", "03ad4ff0967331afd01464857d41e5e497ed198c", []},
+  "jsx": {:git, "git://github.com/talentdeficit/jsx.git", "507fa4c41db33c81e925ab53f4d789d234aaff2f", [tag: "v2.0.1"]},
+  "ranch": {:git, "git://github.com/extend/ranch.git", "5df1f222f94e08abdcab7084f5e13027143cc222", [ref: "0.9.0"]}}
